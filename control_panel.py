@@ -1,6 +1,7 @@
 import os
 import random
 from concurrent import futures
+from enum import Enum
 
 import grpc
 from dotenv import load_dotenv
@@ -10,11 +11,20 @@ from protos import control_panel_pb2, control_panel_pb2_grpc
 load_dotenv()
 
 
+class ControlPanelState(Enum):
+    INITIALIZED = 1,
+    CHAIN_CREATED = 2,
+
+
 class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
     def __init__(self):
+        self.state = ControlPanelState.INITIALIZED
         self.processes = []  # list of control_panel_pb2.NameIP(name=name, ip=ip)
 
     def AddProcess(self, request, context):
+        if self.state != ControlPanelState.INITIALIZED:
+            print("Processes can only be added in the INITIALIZED state")
+            return control_panel_pb2.Empty()
         self.processes.append(control_panel_pb2.NameIP(name=request.name, ip=request.ip))
         print(f"Added process {request.name} with ip {request.ip}")
         return control_panel_pb2.Empty()
@@ -23,15 +33,25 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
     # The first element is the head
     # The last element is the tail
     def CreateChain(self, request, context):
-        if len(self.processes) < 2:
-            print("There should be at least 2 processes to create a chain")
-            return control_panel_pb2.CreateChainResponse()
-        random.shuffle(self.processes)
+        if self.state == ControlPanelState.INITIALIZED:
+            if len(self.processes) < 2:
+                print("There should be at least 2 processes to create a chain")
+                return control_panel_pb2.CreateChainResponse()
+            random.shuffle(self.processes)
+            # Here you can perform some extra checks
+            # (e.g. reshuffle if subsequent chain elements are on the same node)
+            self.state = ControlPanelState.CHAIN_CREATED
+            print("Chain created!")
+        else:
+            print("Chain has already been created")
         chain = self.get_chain()
         print(f"Chain: {chain}")
         return control_panel_pb2.CreateChainResponse(chain=self.processes)
 
     def ListChain(self, request, context):
+        if self.state != ControlPanelState.CHAIN_CREATED:
+            print("Chain has not been created yet")
+            return control_panel_pb2.ListChainResponse()
         chain = self.get_chain()
         print(f"Chain: {chain}")
         return control_panel_pb2.ListChainResponse(chain=chain)

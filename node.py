@@ -152,6 +152,7 @@ Commands:
 if __name__ == '__main__':
     name = f"Node{sys.argv[1]}"
     ip = os.environ[f"{name}_IP"]
+    print(f"Starting node {name} with ip {ip}")
     n = Node(name, ip, os.environ["CONTROL_PANEL_IP"])
     n.print_help()
     while True:

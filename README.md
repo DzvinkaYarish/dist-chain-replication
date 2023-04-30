@@ -44,7 +44,7 @@ script in the root directory.
 
 ### Run the processes 
 
-1. Edit the configuration file
+1. Edit the configuration file `.env`
 
 2. Run the control panel
 
@@ -58,5 +58,4 @@ python control_panel.py
 python node.py <node_id>
 ```
 
-HINT: In modern IDEs like PyCharm you 
-can set up command line argument and allow parallel runs
+HINT: In IDEs like PyCharm you  can set up command line arguments and allow parallel runs

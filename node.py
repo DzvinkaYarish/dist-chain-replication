@@ -1,9 +1,14 @@
+import os
+import sys
 import threading
 from enum import Enum
 
 import grpc
+from dotenv import load_dotenv
 
 from protos import control_panel_pb2, control_panel_pb2_grpc
+
+load_dotenv()
 
 
 class NodeState(Enum):
@@ -54,6 +59,7 @@ class Process(threading.Thread):
                 self.predecessor_ip is None or self.successor_ip is None or self.tail_ip is None):
             print(f"Process incorrectly initialized. Stopping...")
             return
+        print(f"Process {self.name} started with role {self.role}")
 
 
 # In our case, a node will be a process on a machine
@@ -70,7 +76,8 @@ class Node:
             'List-chain': self.list_chain,
         }
 
-    def local_store_ps(self, n: int):
+    def local_store_ps(self, n):
+        n = int(n)
         if self.state != NodeState.INITIALIZED:
             print("Processes have already been created. "
                   "Please start a new program to create a different number of processes")
@@ -81,7 +88,7 @@ class Node:
             self.processes[name] = Process(name)
             with grpc.insecure_channel(self.control_panel_ip) as channel:
                 stub = control_panel_pb2_grpc.ControlPanelStub(channel)
-                req = control_panel_pb2.AddProcessRequest(name=self.name, ip=self.ip)
+                req = control_panel_pb2.NameIP(name=name, ip=self.ip)
                 stub.AddProcess(req)
 
     def create_chain(self):
@@ -106,7 +113,7 @@ class Node:
                 continue
             predecessor_ip = chain[i - 1].ip if i > 0 else None
             successor_ip = chain[i + 1].ip if i < len(chain) - 1 else None
-            tail_ip = chain[-1].ip
+            tail_ip = chain[-1].ip if i != len(chain) - 1 else None
             role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(chain) - 1 else ProcessRole.NONE
             self.processes[name].initialize(self.control_panel_ip, predecessor_ip, successor_ip, tail_ip, role)
         for p in self.processes.values():
@@ -143,10 +150,9 @@ Commands:
 
 
 if __name__ == '__main__':
-    id = 0
-    ips = ["127.0.0.1:50050", "127.0.0.1:50051", "127.0.0.1:50052", "127.0.0.1:50053"]
-    names = ["ControlPanel", "Node1", "Node2", "Node3"]
-    n = Node(names[id], ips[id], ips[0])
+    name = f"Node{sys.argv[1]}"
+    ip = os.environ[f"{name}_IP"]
+    n = Node(name, ip, os.environ["CONTROL_PANEL_IP"])
     n.print_help()
     while True:
         try:

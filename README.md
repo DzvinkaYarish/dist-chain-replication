@@ -43,4 +43,19 @@ script in the root directory.
 
 ### Run the processes 
 
-TODO
+1. Edit the configuration file
+
+2. Run the control panel
+
+```bash
+python control_panel.py
+```
+
+3. Run the nodes
+
+```bash
+python node.py <node_id>
+```
+
+HINT: In modern IDEs like PyCharm you 
+can set up command line argument and allow parallel runs

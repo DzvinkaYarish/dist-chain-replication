@@ -36,6 +36,7 @@ python -m pip install -r requirements.txt
 
 ```bash
 python -m grpc_tools.protoc -I . --python_out=. --grpc_python_out=. ./protos/control_panel.proto
+python -m grpc_tools.protoc -I . --python_out=. --grpc_python_out=. ./protos/node.proto
 ```
 
 Alternatively, you can also execute `./generate_protos.sh` or `./generate_protos.bat` 

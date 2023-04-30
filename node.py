@@ -1,12 +1,14 @@
 import os
 import sys
 import threading
+from concurrent import futures
 from enum import Enum
 
 import grpc
 from dotenv import load_dotenv
 
-from protos import control_panel_pb2, control_panel_pb2_grpc
+from protos import control_panel_pb2, control_panel_pb2_grpc, node_pb2, node_pb2_grpc
+from google.protobuf.empty_pb2 import Empty
 
 load_dotenv()
 
@@ -63,7 +65,7 @@ class Process(threading.Thread):
 
 
 # In our case, a node will be a process on a machine
-class Node:
+class Node(node_pb2_grpc.NodeServicer):
     def __init__(self, name, ip, control_panel_ip):
         self.name = name
         self.ip = ip
@@ -74,6 +76,7 @@ class Node:
             'Local-store-ps': self.local_store_ps,
             'Create-chain': self.create_chain,
             'List-chain': self.list_chain,
+            'Clear': self.clear,
         }
 
     def local_store_ps(self, n):
@@ -104,8 +107,7 @@ class Node:
 
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
-            req = control_panel_pb2.Empty()
-            chain = stub.CreateChain(req).chain
+            chain = stub.CreateChain(Empty()).chain
 
         for i in range(len(chain)):
             name = chain[i].name
@@ -126,9 +128,19 @@ class Node:
             return
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
-            req = control_panel_pb2.Empty()
-            chain = stub.ListChain(req).chain
+            chain = stub.ListChain(Empty()).chain
         print(chain)
+
+    def clear(self):
+        with grpc.insecure_channel(self.control_panel_ip) as channel:
+            stub = control_panel_pb2_grpc.ControlPanelStub(channel)
+            stub.Clear(Empty())
+
+    def Clear(self, request, context):
+        print("Clearing...")
+        self.state = NodeState.INITIALIZED
+        self.processes = {}
+        return Empty()
 
     def handle_input(self, inp):
         inp = inp.strip().split(' ')
@@ -146,15 +158,23 @@ Commands:
     Local-store-ps <number of processes>
     Create-chain
     List-chain
+    Clear
     ''')
 
 
 if __name__ == '__main__':
     name = f"Node{sys.argv[1]}"
     ip = os.environ[f"{name}_IP"]
+    port = ip.split(":")[-1]
     print(f"Starting node {name} with ip {ip}")
     n = Node(name, ip, os.environ["CONTROL_PANEL_IP"])
     n.print_help()
+
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    node_pb2_grpc.add_NodeServicer_to_server(n, server)
+    server.add_insecure_port(f"[::]:{port}")
+    server.start()
+
     while True:
         try:
             print("> ", end="")
@@ -163,4 +183,6 @@ if __name__ == '__main__':
                 continue
             n.handle_input(inp)
         except KeyboardInterrupt:
+            server.stop()
             exit()
+    server.stop()

@@ -1,12 +1,13 @@
 syntax = "proto3";
 
-service ControlPanel {
-  rpc AddProcess(NameIP) returns (Empty) {}
-  rpc CreateChain(Empty) returns (CreateChainResponse) {}
-  rpc ListChain(Empty) returns (ListChainResponse) {}
-}
+import "google/protobuf/empty.proto";
 
-message Empty {}
+service ControlPanel {
+  rpc AddProcess(NameIP) returns (google.protobuf.Empty) {}
+  rpc CreateChain(google.protobuf.Empty) returns (CreateChainResponse) {}
+  rpc ListChain(google.protobuf.Empty) returns (ListChainResponse) {}
+  rpc Clear(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+}
 
 message NameIP {
    string name = 1;

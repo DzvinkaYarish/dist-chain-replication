@@ -6,7 +6,8 @@ from enum import Enum
 import grpc
 from dotenv import load_dotenv
 
-from protos import control_panel_pb2, control_panel_pb2_grpc
+from protos import control_panel_pb2, control_panel_pb2_grpc, node_pb2, node_pb2_grpc
+from google.protobuf.empty_pb2 import Empty
 
 load_dotenv()
 
@@ -24,10 +25,10 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
     def AddProcess(self, request, context):
         if self.state != ControlPanelState.INITIALIZED:
             print("Processes can only be added in the INITIALIZED state")
-            return control_panel_pb2.Empty()
+            return Empty()
         self.processes.append(control_panel_pb2.NameIP(name=request.name, ip=request.ip))
         print(f"Added process {request.name} with ip {request.ip}")
-        return control_panel_pb2.Empty()
+        return Empty()
 
     # Returns a list of processes in the chain
     # The first element is the head
@@ -55,6 +56,18 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         chain = self.get_chain()
         print(f"Chain: {chain}")
         return control_panel_pb2.ListChainResponse(chain=chain)
+
+    def Clear(self, request, context):
+        nodes = set(map(lambda p: p.ip, self.processes))
+        for node_ip in nodes:
+            print(f"Clearing node {node_ip}")
+            with grpc.insecure_channel(node_ip) as channel:
+                stub = node_pb2_grpc.NodeStub(channel)
+                stub.Clear(Empty())
+        self.state = ControlPanelState.INITIALIZED
+        self.processes = []
+        print("Chain has been cleared")
+        return Empty()
 
     def get_chain(self):
         string = ""

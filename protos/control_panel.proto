@@ -1,24 +1,21 @@
 syntax = "proto3";
 
-service GameMaster {
-  rpc AddProcess(AddProcessRequest) returns (AddProcessResponse) {}
-  rpc CreateChain(CreateChainRequest) returns (CreateChainResponse) {}
-  rpc ListChain(ListChainRequest) returns (ListChainResponse) {}
+service ControlPanel {
+  rpc AddProcess(NameIP) returns (Empty) {}
+  rpc CreateChain(Empty) returns (CreateChainResponse) {}
+  rpc ListChain(Empty) returns (ListChainResponse) {}
 }
 
-message AddProcessRequest {
-  string name = 1;
+message Empty {}
+
+message NameIP {
+   string name = 1;
+   string ip = 2;
 }
-
-message AddProcessResponse {}
-
-message CreateChainRequest {}
 
 message CreateChainResponse {
-  repeated string chain = 1;
+  repeated NameIP chain = 1;
 }
-
-message ListChainRequest {}
 
 message ListChainResponse {
   string chain = 1;

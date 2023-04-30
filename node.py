@@ -1,6 +1,10 @@
 import threading
 from enum import Enum
 
+import grpc
+
+from protos import control_panel_pb2, control_panel_pb2_grpc
+
 
 class NodeState(Enum):
     INITIALIZED = 1,
@@ -20,43 +24,44 @@ class Process(threading.Thread):
         super().__init__()
         self.name = name
         self.db = {}
-        self.controlPanel = None
-        self.predecessor = None
-        self.successor = None
-        self.tail = None
+        self.control_panel_ip = None
+        self.predecessor_ip = None
+        self.successor_ip = None
+        self.tail_ip = None
         self.role = None
 
     # In local_store_ps, the processes are first created and then during chain creation they are initialized
     def initialize(self, controlPanel, predecessor, successor, tail, role):
-        self.controlPanel = controlPanel
-        self.predecessor = predecessor
-        self.successor = successor
-        self.tail = tail
+        self.control_panel_ip = controlPanel
+        self.predecessor_ip = predecessor
+        self.successor_ip = successor
+        self.tail_ip = tail
         self.role = role
 
     def run(self):
-        if self.controlPanel is None:
+        if self.control_panel_ip is None:
             print(f"Control Panel is None for {self.name}. Stopping...")
             return
         if self.role == ProcessRole.HEAD and (
-                self.predecessor is not None or self.successor is None or self.tail is None):
+                self.predecessor_ip is not None or self.successor_ip is None or self.tail_ip is None):
             print(f"Head process incorrectly initialized. Stopping...")
             return
         if self.role == ProcessRole.TAIL and (
-                self.predecessor is None or self.successor is not None or self.tail is not None):
+                self.predecessor_ip is None or self.successor_ip is not None or self.tail_ip is not None):
             print(f"Tail process incorrectly initialized. Stopping...")
             return
         if self.role == ProcessRole.NONE and (
-                self.predecessor is None or self.successor is None or self.tail is None):
+                self.predecessor_ip is None or self.successor_ip is None or self.tail_ip is None):
             print(f"Process incorrectly initialized. Stopping...")
             return
 
 
 # In our case, a node will be a process on a machine
 class Node:
-    def __init__(self, name, controlPanel):
+    def __init__(self, name, ip, control_panel_ip):
         self.name = name
-        self.controlPanel = controlPanel
+        self.ip = ip
+        self.control_panel_ip = control_panel_ip
         self.state = NodeState.INITIALIZED
         self.processes = {}
         self.cmds = {
@@ -74,7 +79,10 @@ class Node:
         for i in range(n):
             name = f"{self.name}-ps{i}"
             self.processes[name] = Process(name)
-            self.controlPanel.add_process(name)
+            with grpc.insecure_channel(self.control_panel_ip) as channel:
+                stub = control_panel_pb2_grpc.ControlPanelStub(channel)
+                req = control_panel_pb2.AddProcessRequest(name=self.name, ip=self.ip)
+                stub.AddProcess(req)
 
     def create_chain(self):
         if self.state == NodeState.INITIALIZED:
@@ -86,16 +94,21 @@ class Node:
                   "Please start a new program to create a new chain")
             return
         self.state = NodeState.CHAIN_CREATED
-        chain = self.controlPanel.create_chain()
+
+        with grpc.insecure_channel(self.control_panel_ip) as channel:
+            stub = control_panel_pb2_grpc.ControlPanelStub(channel)
+            req = control_panel_pb2.Empty()
+            chain = stub.CreateChain(req).chain
+
         for i in range(len(chain)):
-            name = chain[i]
+            name = chain[i].name
             if self.processes[name] is None:
                 continue
-            predecessor = chain[i - 1] if i > 0 else None
-            successor = chain[i + 1] if i < len(chain) - 1 else None
-            tail = chain[-1]
+            predecessor_ip = chain[i - 1].ip if i > 0 else None
+            successor_ip = chain[i + 1].ip if i < len(chain) - 1 else None
+            tail_ip = chain[-1].ip
             role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(chain) - 1 else ProcessRole.NONE
-            self.processes[name].initialize(self.controlPanel, predecessor, successor, tail, role)
+            self.processes[name].initialize(self.control_panel_ip, predecessor_ip, successor_ip, tail_ip, role)
         for p in self.processes.values():
             p.start()
 
@@ -104,7 +117,11 @@ class Node:
             print("Chain has not been created yet. "
                   "Please create a chain with Create-chain command")
             return
-        print(self.controlPanel.list_chain())
+        with grpc.insecure_channel(self.control_panel_ip) as channel:
+            stub = control_panel_pb2_grpc.ControlPanelStub(channel)
+            req = control_panel_pb2.Empty()
+            chain = stub.ListChain(req).chain
+        print(chain)
 
     def handle_input(self, inp):
         inp = inp.strip().split(' ')
@@ -125,9 +142,11 @@ Commands:
     ''')
 
 
-# TODO ips and integrate control panel GRPC server
 if __name__ == '__main__':
-    n = Node("Node1")
+    id = 0
+    ips = ["127.0.0.1:50050", "127.0.0.1:50051", "127.0.0.1:50052", "127.0.0.1:50053"]
+    names = ["ControlPanel", "Node1", "Node2", "Node3"]
+    n = Node(names[id], ips[id], ips[0])
     n.print_help()
     while True:
         try:

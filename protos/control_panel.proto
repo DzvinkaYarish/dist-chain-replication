@@ -7,6 +7,9 @@ service ControlPanel {
   rpc CreateChain(google.protobuf.Empty) returns (CreateChainResponse) {}
   rpc ListChain(google.protobuf.Empty) returns (ListChainResponse) {}
   rpc Clear(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc GetHead(google.protobuf.Empty) returns (NameIP) {}
+  rpc RemoveHead(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc RestoreHead(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 }
 
 message NameIP {

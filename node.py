@@ -14,15 +14,16 @@ load_dotenv()
 
 
 class NodeState(Enum):
-    INITIALIZED = 1,
-    PS_CREATED = 2,
-    CHAIN_CREATED = 3,
+    INITIALIZED = 1
+    PS_CREATED = 2
+    CHAIN_CREATED = 3
 
 
 class ProcessRole(Enum):
-    NONE = 1,
-    HEAD = 2,
-    TAIL = 3,
+    NONE = 1
+    HEAD = 2
+    TAIL = 3
+    DISABLED = 4
 
 
 # In our case, a process will be a thread on a node
@@ -31,6 +32,12 @@ class Process(threading.Thread):
         super().__init__()
         self.name = name
         self.db = {}
+        # Stores a list of last 5 write operations (key, value) performed on the db.
+        # Used to reconcile a restored head
+        self.last_write_operations = []
+        # Number of write operations performed on the db.
+        # Used as numerical deviation during head restoration
+        self.num_write_operations = 0
         self.control_panel_ip = None
         self.predecessor_ip = None
         self.successor_ip = None
@@ -61,6 +68,8 @@ class Process(threading.Thread):
                 self.predecessor_ip is None or self.successor_ip is None or self.tail_ip is None):
             print(f"Process incorrectly initialized. Stopping...")
             return
+        if self.role == ProcessRole.DISABLED:
+            print(f"Process {self.name} is disabled. Requests will not be processed")
         print(f"Process {self.name} started with role {self.role}")
 
 
@@ -77,6 +86,8 @@ class Node(node_pb2_grpc.NodeServicer):
             'Create-chain': self.create_chain,
             'List-chain': self.list_chain,
             'Clear': self.clear,
+            'Remove-head': self.remove_head,
+            'Restore-head': self.restore_head,
         }
 
     def local_store_ps(self, n):
@@ -109,6 +120,7 @@ class Node(node_pb2_grpc.NodeServicer):
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             chain = stub.CreateChain(Empty()).chain
 
+        # TODO ideally this action should be performed by the control panel
         for i in range(len(chain)):
             name = chain[i].name
             if self.processes[name] is None:
@@ -136,10 +148,60 @@ class Node(node_pb2_grpc.NodeServicer):
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             stub.Clear(Empty())
 
+    def remove_head(self):
+        with grpc.insecure_channel(self.control_panel_ip) as channel:
+            stub = control_panel_pb2_grpc.ControlPanelStub(channel)
+            stub.RemoveHead(Empty())
+
+    def restore_head(self):
+        with grpc.insecure_channel(self.control_panel_ip) as channel:
+            stub = control_panel_pb2_grpc.ControlPanelStub(channel)
+            stub.RestoreHead(Empty())
+
     def Clear(self, request, context):
         print("Clearing...")
         self.state = NodeState.INITIALIZED
         self.processes = {}
+        return Empty()
+
+    def SetPredecessorIP(self, request, context):
+        process = self.processes[request.nodeID]
+        assert process is not None
+        process.predecessor_ip = request.ip
+        return Empty()
+
+    def SetRole(self, request, context):
+        process = self.processes[request.nodeID]
+        assert process is not None
+        new_role = ProcessRole(request.role)
+        process.role = new_role
+        return Empty()
+
+    def GetNumericalDeviation(self, request, context):
+        process = self.processes[request.nodeID]
+        assert process is not None
+        return node_pb2.NumericalDeviation(deviation=process.num_write_operations)
+
+    def Reconcile(self, request, context):
+        process = self.processes[request.sourceNodeID]
+        assert process is not None
+        max_deviation = len(process.last_write_operations)
+        with grpc.insecure_channel(request.targetIP) as channel:
+            stub = node_pb2_grpc.NodeStub(channel)
+            deviation = stub.GetNumericalDeviation(
+                node_pb2.NumericalDeviationRequest(nodeID=request.targetNodeID)
+            ).deviation
+            diff = process.num_write_operations - deviation
+            assert 0 <= diff <= max_deviation
+            for i in range(max_deviation - diff, max_deviation):
+                key, value = process.last_write_operations[i]
+                stub.RawWrite(node_pb2.RawWriteRequest(nodeID=request.targetNodeID, key=key, value=value))
+        return Empty()
+
+    def RawWrite(self, request, context):
+        process = self.processes[request.nodeID]
+        assert process is not None
+        process.db[request.key] = request.value
         return Empty()
 
     def handle_input(self, inp):
@@ -159,6 +221,8 @@ Commands:
     Create-chain
     List-chain
     Clear
+    Remove-head
+    Restore-head
     ''')
 
 

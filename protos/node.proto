@@ -3,12 +3,21 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 
 service Node {
+  rpc Initialize(InitializeRequest) returns (google.protobuf.Empty) {}
   rpc Clear(google.protobuf.Empty) returns (google.protobuf.Empty) {}
   rpc SetPredecessorIP(SetPredecessorIPRequest) returns (google.protobuf.Empty) {}
   rpc SetRole(NodeRole) returns (google.protobuf.Empty) {}
   rpc GetNumericalDeviation(NumericalDeviationRequest) returns (NumericalDeviation) {}
   rpc Reconcile(ReconcileRequest) returns (google.protobuf.Empty) {}
   rpc RawWrite(RawWriteRequest) returns (google.protobuf.Empty) {}
+}
+
+message InitializeRequest {
+  string processID = 1;
+  string predecessorIP = 3;
+  string successorIP = 4;
+  string tailIP = 5;
+  int32 role = 6;
 }
 
 message SetPredecessorIPRequest {

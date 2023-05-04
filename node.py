@@ -114,24 +114,10 @@ class Node(node_pb2_grpc.NodeServicer):
             print("Chain has already been created. "
                   "Please start a new program to create a new chain")
             return
-        self.state = NodeState.CHAIN_CREATED
 
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
-            chain = stub.CreateChain(Empty()).chain
-
-        # TODO ideally this action should be performed by the control panel
-        for i in range(len(chain)):
-            name = chain[i].name
-            if self.processes[name] is None:
-                continue
-            predecessor_ip = chain[i - 1].ip if i > 0 else None
-            successor_ip = chain[i + 1].ip if i < len(chain) - 1 else None
-            tail_ip = chain[-1].ip if i != len(chain) - 1 else None
-            role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(chain) - 1 else ProcessRole.NONE
-            self.processes[name].initialize(self.control_panel_ip, predecessor_ip, successor_ip, tail_ip, role)
-        for p in self.processes.values():
-            p.start()
+            stub.CreateChain(Empty())
 
     def list_chain(self):
         if self.state != NodeState.CHAIN_CREATED:
@@ -157,6 +143,16 @@ class Node(node_pb2_grpc.NodeServicer):
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             stub.RestoreHead(Empty())
+
+    def Initialize(self, request, context):
+        process = self.processes[request.processID]
+        assert process is not None
+        process.initialize(self.control_panel_ip, request.predecessorIP,
+                           request.successorIP, request.tailIP, request.role)
+        print(f"Process {request.processID} initialized")
+        process.start()
+        self.state = NodeState.CHAIN_CREATED  # even if one processes is initialized, consider the chain created
+        return Empty()
 
     def Clear(self, request, context):
         print("Clearing...")

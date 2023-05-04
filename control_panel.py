@@ -47,8 +47,25 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             print("Chain created!")
         else:
             print("Chain has already been created")
-        chain = self.get_chain()
-        print(f"Chain: {chain}")
+        print(f"Chain: {self.get_chain()}")
+
+        for i in range(len(self.processes)):
+            name, ip = self.processes[i].name, self.processes[i].ip
+            predecessor_ip = self.processes[i - 1].ip if i > 0 else None
+            successor_ip = self.processes[i + 1].ip if i < len(self.processes) - 1 else None
+            tail_ip = self.processes[-1].ip if i != len(self.processes) - 1 else None
+            role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(self.processes) - 1 else ProcessRole.NONE
+
+            with grpc.insecure_channel(ip) as channel:
+                stub = node_pb2_grpc.NodeStub(channel)
+                stub.Initialize(node_pb2.InitializeRequest(
+                    processID=name,
+                    predecessorIP=predecessor_ip,
+                    successorIP=successor_ip,
+                    tailIP=tail_ip,
+                    role=role.value,
+                ))
+
         return control_panel_pb2.CreateChainResponse(chain=self.processes)
 
     def ListChain(self, request, context):

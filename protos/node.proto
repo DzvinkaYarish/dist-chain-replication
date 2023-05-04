@@ -11,34 +11,33 @@ service Node {
   rpc RawWrite(RawWriteRequest) returns (google.protobuf.Empty) {}
 }
 
-// TODO replace nodeID with processID
 message SetPredecessorIPRequest {
-  string nodeID = 1;
+  string processID = 1;
   string ip = 2;
 }
 
 message NodeRole {
-  string nodeID = 1;
+  string processID = 1;
   int32 role = 2;
 }
 
 message NumericalDeviationRequest {
-  string nodeID = 1;
+  string processID = 1;
 }
 
 message NumericalDeviation {
-  string nodeID = 1;
+  string processID = 1;
   int32 deviation = 2;
 }
 
 message ReconcileRequest {
-  string sourceNodeID = 1;
-  string targetNodeID = 2;
+  string sourceProcessID = 1;
+  string targetProcessID = 2;
   string targetIP = 3;
 }
 
 message RawWriteRequest {
-  string nodeID = 1;
+  string processID = 1;
   string key = 2;
   string value = 3;
 }

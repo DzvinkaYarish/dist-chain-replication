@@ -93,7 +93,7 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         with grpc.insecure_channel(previous_head_ip) as channel:
             stub = node_pb2_grpc.NodeStub(channel)
             stub.SetRole(node_pb2.NodeRole(
-                nodeID=previous_head_name,
+                processID=previous_head_name,
                 role=ProcessRole.DISABLED.value
             ))
         new_head_name, new_head_ip = self.processes[0].name, self.processes[0].ip
@@ -101,11 +101,11 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             stub = node_pb2_grpc.NodeStub(channel)
             # Set the next node as a new head
             stub.SetRole(node_pb2.NodeRole(
-                nodeID=new_head_name,
+                processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
             # Set the new head predecessor's to None
-            stub.SetPredecessorIP(node_pb2.SetPredecessorIPRequest(nodeID=new_head_name))
+            stub.SetPredecessorIP(node_pb2.SetPredecessorIPRequest(processID=new_head_name))
         print(f"Head {previous_head_name} ({previous_head_ip}) has been removed")
         return Empty()
 
@@ -129,7 +129,7 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         with grpc.insecure_channel(new_head_ip) as channel:
             stub = node_pb2_grpc.NodeStub(channel)
             stub.SetRole(node_pb2.NodeRole(
-                nodeID=new_head_name,
+                processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
         print("here2")
@@ -138,18 +138,18 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             stub = node_pb2_grpc.NodeStub(channel)
             # Set the previous head role
             stub.SetRole(node_pb2.NodeRole(
-                nodeID=old_head_name,
+                processID=old_head_name,
                 role=ProcessRole.NONE.value
             ))
             # change the current node prev to None
             stub.SetPredecessorIP(node_pb2.SetPredecessorIPRequest(
-                nodeID=old_head_name,
+                processID=old_head_name,
                 ip=new_head_ip
             ))
             # reconciling
             stub.Reconcile(node_pb2.ReconcileRequest(
-                sourceNodeID=old_head_name,
-                targetNodeID=new_head_name,
+                sourceProcessID=old_head_name,
+                targetProcessID=new_head_name,
                 targetIP=new_head_ip
             ))
         print(f"Process {self.processes[0].name} ({self.processes[0].ip}) has been restored as the head. "
@@ -170,12 +170,12 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         with grpc.insecure_channel(node1.ip) as channel:
             stub = node_pb2_grpc.NodeStub(channel)
             node1_deviation = stub.GetNumericalDeviation(
-                node_pb2.NumericalDeviationRequest(nodeID=node1.name)
+                node_pb2.NumericalDeviationRequest(processID=node1.name)
             ).deviation
         with grpc.insecure_channel(node2.ip) as channel:
             stub = node_pb2_grpc.NodeStub(channel)
             node2_deviation = stub.GetNumericalDeviation(
-                node_pb2.NumericalDeviationRequest(nodeID=node2.name)
+                node_pb2.NumericalDeviationRequest(processID=node2.name)
             ).deviation
         return abs(node1_deviation - node2_deviation) > 5
 

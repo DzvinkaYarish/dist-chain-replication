@@ -165,41 +165,41 @@ class Node(node_pb2_grpc.NodeServicer):
         return Empty()
 
     def SetPredecessorIP(self, request, context):
-        process = self.processes[request.nodeID]
+        process = self.processes[request.processID]
         assert process is not None
         process.predecessor_ip = request.ip
         return Empty()
 
     def SetRole(self, request, context):
-        process = self.processes[request.nodeID]
+        process = self.processes[request.processID]
         assert process is not None
         new_role = ProcessRole(request.role)
         process.role = new_role
         return Empty()
 
     def GetNumericalDeviation(self, request, context):
-        process = self.processes[request.nodeID]
+        process = self.processes[request.processID]
         assert process is not None
         return node_pb2.NumericalDeviation(deviation=process.num_write_operations)
 
     def Reconcile(self, request, context):
-        process = self.processes[request.sourceNodeID]
+        process = self.processes[request.sourceProcessID]
         assert process is not None
         max_deviation = len(process.last_write_operations)
         with grpc.insecure_channel(request.targetIP) as channel:
             stub = node_pb2_grpc.NodeStub(channel)
             deviation = stub.GetNumericalDeviation(
-                node_pb2.NumericalDeviationRequest(nodeID=request.targetNodeID)
+                node_pb2.NumericalDeviationRequest(processID=request.targetProcessID)
             ).deviation
             diff = process.num_write_operations - deviation
             assert 0 <= diff <= max_deviation
             for i in range(max_deviation - diff, max_deviation):
                 key, value = process.last_write_operations[i]
-                stub.RawWrite(node_pb2.RawWriteRequest(nodeID=request.targetNodeID, key=key, value=value))
+                stub.RawWrite(node_pb2.RawWriteRequest(processID=request.targetProcessID, key=key, value=value))
         return Empty()
 
     def RawWrite(self, request, context):
-        process = self.processes[request.nodeID]
+        process = self.processes[request.processID]
         assert process is not None
         process.db[request.key] = request.value
         return Empty()

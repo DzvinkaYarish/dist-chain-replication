@@ -243,6 +243,6 @@ if __name__ == '__main__':
                 continue
             n.handle_input(inp)
         except KeyboardInterrupt:
-            server.stop()
+            server.stop(0)
             exit()
-    server.stop()
+    server.stop(0)

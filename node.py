@@ -68,6 +68,51 @@ class Process(process_pb2_grpc.ProcessServicer):
         self.process_server.stop(0)
 
         return Empty()
+
+    def Write(self, request, context):
+        if self.role == ProcessRole.TAIL:
+            self.db[request.key] = (request.value, 'clean')
+        else:
+            with grpc.insecure_channel(self.successor_ip) as channel:
+                stub = process_pb2_grpc.ProcessStub(channel)
+                self.db[request.key] = (request.value, 'dirty')
+                stub.Write(request)
+                self.db[request.key] = (request.value, 'clean')
+        return Empty()
+
+    def Read(self, request, context):
+        if request.key in self.db:
+            if self.db[request.key][1] == 'clean':
+                return process_pb2.ReadResponse(value=self.db[request.key][0])
+            else:
+                with grpc.insecure_channel(self.tail_ip) as channel:
+                    stub = process_pb2_grpc.ProcessStub(channel)
+                    return stub.Read(request)
+        elif self.role == ProcessRole.TAIL:
+            return process_pb2.ReadResponse(value=None)
+
+    def ListBooks(self, request, context):
+        book_lists = dict()
+        if self.role == ProcessRole.TAIL:
+            for key, value in self.db.items():
+                book_lists[key] = value[0]
+        else:
+            with grpc.insecure_channel(self.tail_ip) as channel:
+                stub = process_pb2_grpc.ProcessStub(channel)
+                for key, value in self.db.items():
+                    if value[1] == 'clean':
+                        book_lists[key] = value[0]
+                    else:
+                        resp = stub.Read(process_pb2.ReadRequest(key=key))
+                        if resp.value is not None:
+                            book_lists[key] = resp.value
+        return process_pb2.BookList(books=book_lists)
+
+    def DataStatus(self, request, context):
+        status = dict()
+        for key, value in self.db.items():
+            status[key] = value[1]
+        return process_pb2.DataStatusResponse(status=status)
     
 
     def run(self):
@@ -197,8 +242,37 @@ class Node():
             print("Invalid input")
             return
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].successor_ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.ProcessStub(channel)
             stub.Write(process_pb2.WriteRequest(bname, price))
+        with grpc.insecure_channel(self.processes[next(iter(self.processes))].head_ip) as channel:
+            stub = process_pb2_grpc.ProcessStub(channel)
+            stub.Write(process_pb2.WriteRequest(bname, price))
+
+    def read_operation(self, bname):
+        # NO SPACES IN INPUT
+        bname = bname.strip('"" ')
+        with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
+            stub = process_pb2_grpc.ProcessStub(channel)
+            response = stub.Read(process_pb2.ReadRequest(bname))
+            print(response.value)
+
+    def list_books(self):
+        with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
+            stub = process_pb2_grpc.ProcessStub(channel)
+            response = stub.ListBooks(Empty())
+            print(response.books)
+
+    def data_status(self, pname):
+        # NO SPACES IN INPUT
+        pname = pname.strip()
+        if pname not in self.processes.keys():
+            print("Invalid input")
+            return
+        else:
+            with grpc.insecure_channel(self.processes[pname].ip) as channel:
+                stub = process_pb2_grpc.ProcessStub(channel)
+                response = stub.DataStatus(Empty())
+                print(response.status)
 
     def SetPredecessorIP(self, request, context):
         process = self.processes[request.processID]
@@ -223,7 +297,7 @@ class Node():
         assert process is not None
         max_deviation = len(process.last_write_operations)
         with grpc.insecure_channel(request.targetIP) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.ProcessStub(channel)
             deviation = stub.GetNumericalDeviation(
                 process_pb2.NumericalDeviationRequest(processID=request.targetProcessID)
             ).deviation

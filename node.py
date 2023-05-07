@@ -83,13 +83,13 @@ class Process(process_pb2_grpc.ProcessServicer):
     def Read(self, request, context):
         if request.key in self.db:
             if self.db[request.key][1] == 'clean':
-                return process_pb2.ReadResponse(value=self.db[request.key][0])
+                return process_pb2.ReadResponse(value=float(self.db[request.key][0]), success=True)
             else:
                 with grpc.insecure_channel(self.tail_ip) as channel:
                     stub = process_pb2_grpc.ProcessStub(channel)
                     return stub.Read(request)
         elif self.role == ProcessRole.TAIL:
-            return process_pb2.ReadResponse(value=None)
+            return process_pb2.ReadResponse(value=float(0.1), success=False)
 
     def ListBooks(self, request, context):
         book_lists = dict()
@@ -152,10 +152,10 @@ class Node():
             'Remove-head': self.remove_head,
             'Restore-head': self.restore_head,
             'Write-operation': self.write_operation,
-            # 'Read-operation': self.read_operation,
-            # 'List-books': self.list_books,
+            'Read-operation': self.read_operation,
+            'List-books': self.list_books,
             # 'Time-out': self.timeout,
-            # 'Data-status': self.data_status
+            'Data-status': self.data_status
         }
 
     def local_store_ps(self, n):
@@ -182,7 +182,6 @@ class Node():
                 stub.AddProcess(req)
 
             self.processes[name] = process
-
 
     def create_chain(self):
         if len(self.processes) == 0 or self.processes[next(iter(self.processes))].state == ProcessState.INACTIVE:
@@ -224,7 +223,6 @@ class Node():
 
     def write_operation(self, bp_pair):
         # NO SPACES IN INPUT
-        correct_input = False
         cleaned_bp_pair = bp_pair.strip()
         if cleaned_bp_pair[0] != '<' and cleaned_bp_pair[-1] != '>':
             print('Invalid input')
@@ -241,20 +239,17 @@ class Node():
         except:
             print("Invalid input")
             return
-        with grpc.insecure_channel(self.processes[next(iter(self.processes))].successor_ip) as channel:
-            stub = process_pb2_grpc.ProcessStub(channel)
-            stub.Write(process_pb2.WriteRequest(bname, price))
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].head_ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
-            stub.Write(process_pb2.WriteRequest(bname, price))
+            stub.Write(process_pb2.WriteRequest(key=bname, value=price))
 
     def read_operation(self, bname):
         # NO SPACES IN INPUT
-        bname = bname.strip('"" ')
+        bname = bname.strip('" ')
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
-            response = stub.Read(process_pb2.ReadRequest(bname))
-            print(response.value)
+            response = stub.Read(process_pb2.ReadRequest(key=bname))
+            print(response)
 
     def list_books(self):
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
@@ -314,20 +309,13 @@ class Node():
         process.db[request.key] = request.value
         return Empty()
 
-    def Write(self, request, context):
-        process = self.processes[request.processID]
-        assert process is not None
-        process.db[request.key] = request.value
-        return Empty()
-
     def handle_input(self, inp):
         inp = inp.strip().split(' ')
         try:
             self.cmds[inp[0]](*inp[1:])
         except KeyError:
             print('Invalid command.')
-        except TypeError as e:
-            print(e)
+        except TypeError:
             print('Invalid arguments to the command.')
 
     @staticmethod

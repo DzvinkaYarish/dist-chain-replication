@@ -11,6 +11,7 @@ service Process {
   rpc Reconcile(ReconcileRequest) returns (google.protobuf.Empty) {}
   rpc RawWrite(RawWriteRequest) returns (google.protobuf.Empty) {}
   rpc Write(WriteRequest) returns (google.protobuf.Empty) {}
+  rpc Read(ReadRequest) returns (ReadResponse) {}
 }
 
 message InitializeRequest {
@@ -53,7 +54,15 @@ message RawWriteRequest {
 }
 
 message WriteRequest {
-  string processID = 1;
-  string key = 2;
-  string value = 3;
+  string key = 1;
+  string value = 2;
+}
+
+message ReadRequest {
+  string key = 1;
+}
+
+message ReadResponse {
+  float value = 1;
+  bool success = 2;
 }

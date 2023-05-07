@@ -43,21 +43,23 @@ class Process(process_pb2_grpc.ProcessServicer):
         self.predecessor_ip = None
         self.successor_ip = None
         self.tail_ip = None
+        self.head_ip = None
         self.role = None
         self.process_server = None
         self.state = ProcessState.INITIALIZED
 
     # In local_store_ps, the processes are first created and then during chain creation they are initialized
-    def initialize(self, controlPanel, predecessor, successor, tail, role):
+    def initialize(self, controlPanel, predecessor, successor, head, tail, role):
         self.control_panel_ip = controlPanel
         self.predecessor_ip = predecessor
         self.successor_ip = successor
         self.tail_ip = tail
+        self.head_ip = head
         self.role = role
     
     def Initialize(self, request, context):
         self.initialize(self.control_panel_ip, request.predecessorIP,
-                           request.successorIP, request.tailIP, request.role)
+                           request.successorIP, request.headIP, request.tailIP, request.role)
         print(f"Process {request.processID} initialized")
         self.state = ProcessState.CHAIN_CREATED  # even if one processes is initialized, consider the chain created
         return Empty()

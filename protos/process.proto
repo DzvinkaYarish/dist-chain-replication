@@ -12,6 +12,8 @@ service Process {
   rpc RawWrite(RawWriteRequest) returns (google.protobuf.Empty) {}
   rpc Write(WriteRequest) returns (google.protobuf.Empty) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
+  rpc DataStatus(google.protobuf.Empty) returns (StatusResponse) {}
+  rpc ListBooks(google.protobuf.Empty) returns (BookList) {}
 }
 
 message InitializeRequest {
@@ -57,6 +59,7 @@ message RawWriteRequest {
 message WriteRequest {
   string key = 1;
   float value = 2;
+  uint32 timeout = 3;
 }
 
 message ReadRequest {
@@ -66,4 +69,12 @@ message ReadRequest {
 message ReadResponse {
   float value = 1;
   bool success = 2;
+}
+
+message StatusResponse {
+  map<string, string> status = 1;
+}
+
+message BookList {
+  map<string, float> books = 1;
 }

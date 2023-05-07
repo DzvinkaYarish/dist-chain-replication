@@ -3,6 +3,7 @@ import sys
 import threading
 from concurrent import futures
 from enum import Enum
+import time
 
 import grpc
 from dotenv import load_dotenv
@@ -72,11 +73,11 @@ class Process(process_pb2_grpc.ProcessServicer):
         return Empty()
 
     def Write(self, request, context):
-        if self.role == ProcessRole.TAIL:
-            print(f"Write is in tail {self.name}")
+        print(f"Write is in role {self.role} in {self.name}")
+        time.sleep(request.timeout)
+        if self.role == 3:
             self.db[request.key] = (request.value, 'clean')
         else:
-            print(f"Write is going {self.name}")
             with grpc.insecure_channel(self.successor_ip) as channel:
                 stub = process_pb2_grpc.ProcessStub(channel)
                 self.db[request.key] = (request.value, 'dirty')
@@ -116,7 +117,7 @@ class Process(process_pb2_grpc.ProcessServicer):
         status = dict()
         for key, value in self.db.items():
             status[key] = value[1]
-        return process_pb2.DataStatusResponse(status=status)
+        return process_pb2.StatusResponse(status=status)
     
 
     def run(self):
@@ -158,7 +159,6 @@ class Node():
             'Write-operation': self.write_operation,
             'Read-operation': self.read_operation,
             'List-books': self.list_books,
-            # 'Time-out': self.timeout,
             'Data-status': self.data_status
         }
 
@@ -225,7 +225,7 @@ class Node():
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             stub.RestoreHead(Empty())
 
-    def write_operation(self, bp_pair):
+    def write_operation(self, bp_pair, timeout):
         # NO SPACES IN INPUT
         cleaned_bp_pair = bp_pair.strip()
         if cleaned_bp_pair[0] != '<' and cleaned_bp_pair[-1] != '>':
@@ -240,12 +240,13 @@ class Node():
         bname = bname.strip('""')
         try:
             price = float(price)
+            timeout = int(timeout)
         except:
             print("Invalid input")
             return
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].head_ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
-            stub.Write(process_pb2.WriteRequest(key=bname, value=price))
+            stub.Write(process_pb2.WriteRequest(key=bname, value=price, timeout=timeout))
 
     def read_operation(self, bname):
         # NO SPACES IN INPUT
@@ -253,7 +254,10 @@ class Node():
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
             response = stub.Read(process_pb2.ReadRequest(key=bname))
-            print(response)
+            if response.success:
+                print(f"Book name: {bname}, price: {response.value}")
+            else:
+                print("Book not found")
 
     def list_books(self):
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
@@ -332,7 +336,10 @@ Commands:
     Clear
     Remove-head
     Restore-head
-    Write-operation
+    Write-operation <book name, price> <timeout>
+    Read-operation <book name>
+    Data-status
+    List-books
     ''')
 
 

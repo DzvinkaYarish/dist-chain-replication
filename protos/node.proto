@@ -10,6 +10,7 @@ service Node {
   rpc GetNumericalDeviation(NumericalDeviationRequest) returns (NumericalDeviation) {}
   rpc Reconcile(ReconcileRequest) returns (google.protobuf.Empty) {}
   rpc RawWrite(RawWriteRequest) returns (google.protobuf.Empty) {}
+  rpc Write(WriteRequest) returns (google.protobuf.Empty) {}
 }
 
 message InitializeRequest {
@@ -46,6 +47,12 @@ message ReconcileRequest {
 }
 
 message RawWriteRequest {
+  string processID = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message WriteRequest {
   string processID = 1;
   string key = 2;
   string value = 3;

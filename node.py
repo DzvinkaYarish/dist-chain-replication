@@ -88,6 +88,11 @@ class Node(node_pb2_grpc.NodeServicer):
             'Clear': self.clear,
             'Remove-head': self.remove_head,
             'Restore-head': self.restore_head,
+            'Write-operation': self.write_operation,
+            # 'Read-operation': self.read_operation,
+            # 'List-books': self.list_books,
+            # 'Time-out': self.timeout,
+            # 'Data-status': self.data_status
         }
 
     def local_store_ps(self, n):
@@ -143,6 +148,29 @@ class Node(node_pb2_grpc.NodeServicer):
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             stub.RestoreHead(Empty())
+
+    def write_operation(self, bp_pair):
+        # NO SPACES IN INPUT
+        correct_input = False
+        cleaned_bp_pair = bp_pair.strip()
+        if cleaned_bp_pair[0] != '<' and cleaned_bp_pair[-1] != '>':
+            print('Invalid input')
+            return
+        cleaned_bp_pair = cleaned_bp_pair.strip('<>')
+        pair_vals = cleaned_bp_pair.split(',')
+        if len(pair_vals) != 2:
+            print('Invalid input')
+            return
+        bname, price = pair_vals
+        bname = bname.strip('""')
+        try:
+            price = float(price)
+        except:
+            print("Invalid input")
+            return
+        with grpc.insecure_channel(self.processes[next(iter(self.processes))].successor_ip) as channel:
+            stub = node_pb2_grpc.NodeStub(channel)
+            stub.Write(node_pb2.WriteRequest(bname, price))
 
     def Initialize(self, request, context):
         process = self.processes[request.processID]
@@ -200,13 +228,20 @@ class Node(node_pb2_grpc.NodeServicer):
         process.db[request.key] = request.value
         return Empty()
 
+    def Write(self, request, context):
+        process = self.processes[request.processID]
+        assert process is not None
+        process.db[request.key] = request.value
+        return Empty()
+
     def handle_input(self, inp):
         inp = inp.strip().split(' ')
         try:
             self.cmds[inp[0]](*inp[1:])
         except KeyError:
             print('Invalid command.')
-        except TypeError:
+        except TypeError as e:
+            print(e)
             print('Invalid arguments to the command.')
 
     @staticmethod
@@ -219,6 +254,7 @@ Commands:
     Clear
     Remove-head
     Restore-head
+    Write-operation
     ''')
 
 

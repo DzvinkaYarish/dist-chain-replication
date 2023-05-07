@@ -56,7 +56,7 @@ message RawWriteRequest {
 
 message WriteRequest {
   string key = 1;
-  string value = 2;
+  float value = 2;
 }
 
 message ReadRequest {

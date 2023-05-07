@@ -73,8 +73,10 @@ class Process(process_pb2_grpc.ProcessServicer):
 
     def Write(self, request, context):
         if self.role == ProcessRole.TAIL:
+            print(f"Write is in tail {self.name}")
             self.db[request.key] = (request.value, 'clean')
         else:
+            print(f"Write is going {self.name}")
             with grpc.insecure_channel(self.successor_ip) as channel:
                 stub = process_pb2_grpc.ProcessStub(channel)
                 self.db[request.key] = (request.value, 'dirty')
@@ -90,7 +92,7 @@ class Process(process_pb2_grpc.ProcessServicer):
                 with grpc.insecure_channel(self.tail_ip) as channel:
                     stub = process_pb2_grpc.ProcessStub(channel)
                     return stub.Read(request)
-        elif self.role == ProcessRole.TAIL:
+        else:
             return process_pb2.ReadResponse(value=float(0.1), success=False)
 
     def ListBooks(self, request, context):

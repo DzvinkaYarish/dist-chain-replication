@@ -7,15 +7,15 @@ from enum import Enum
 import grpc
 from dotenv import load_dotenv
 
-from protos import control_panel_pb2, control_panel_pb2_grpc, node_pb2, node_pb2_grpc
+from protos import control_panel_pb2, control_panel_pb2_grpc, process_pb2, process_pb2_grpc
 from google.protobuf.empty_pb2 import Empty
 
 load_dotenv()
 
 
-class NodeState(Enum):
+class ProcessState(Enum):
     INITIALIZED = 1
-    PS_CREATED = 2
+    INACTIVE = 2
     CHAIN_CREATED = 3
 
 
@@ -27,7 +27,7 @@ class ProcessRole(Enum):
 
 
 # In our case, a process will be a thread on a node
-class Process(threading.Thread):
+class Process(process_pb2_grpc.ProcessServicer):
     def __init__(self, name):
         super().__init__()
         self.name = name
@@ -38,11 +38,14 @@ class Process(threading.Thread):
         # Number of write operations performed on the db.
         # Used as numerical deviation during head restoration
         self.num_write_operations = 0
+        self.ip = None
         self.control_panel_ip = None
         self.predecessor_ip = None
         self.successor_ip = None
         self.tail_ip = None
         self.role = None
+        self.process_server = None
+        self.state = ProcessState.INITIALIZED
 
     # In local_store_ps, the processes are first created and then during chain creation they are initialized
     def initialize(self, controlPanel, predecessor, successor, tail, role):
@@ -51,6 +54,21 @@ class Process(threading.Thread):
         self.successor_ip = successor
         self.tail_ip = tail
         self.role = role
+    
+    def Initialize(self, request, context):
+        self.initialize(self.control_panel_ip, request.predecessorIP,
+                           request.successorIP, request.tailIP, request.role)
+        print(f"Process {request.processID} initialized")
+        self.state = ProcessState.CHAIN_CREATED  # even if one processes is initialized, consider the chain created
+        return Empty()
+    
+    def Clear(self, request, context):
+        print("Clearing...")
+        self.state = ProcessState.INACTIVE
+        self.process_server.stop(0)
+
+        return Empty()
+    
 
     def run(self):
         if self.control_panel_ip is None:
@@ -74,12 +92,12 @@ class Process(threading.Thread):
 
 
 # In our case, a node will be a process on a machine
-class Node(node_pb2_grpc.NodeServicer):
+class Node():
     def __init__(self, name, ip, control_panel_ip):
         self.name = name
         self.ip = ip
         self.control_panel_ip = control_panel_ip
-        self.state = NodeState.INITIALIZED
+        # self.state = ProcessState.INITIALIZED
         self.processes = {}
         self.cmds = {
             'Local-store-ps': self.local_store_ps,
@@ -97,25 +115,36 @@ class Node(node_pb2_grpc.NodeServicer):
 
     def local_store_ps(self, n):
         n = int(n)
-        if self.state != NodeState.INITIALIZED:
+        if len(self.processes) != 0 and self.processes[next(iter(self.processes))].state != ProcessState.INACTIVE:
             print("Processes have already been created. "
                   "Please start a new program to create a different number of processes")
             return
-        self.state = NodeState.PS_CREATED
+        self.processes = {}
         for i in range(n):
             name = f"{self.name}-ps{i}"
-            self.processes[name] = Process(name)
+            process = Process(name)
+            process.ip = self.ip.split(":")[0] + f":{int(self.ip.split(':')[-1]) + i + 1}"
+
+            server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+            process_pb2_grpc.add_ProcessServicer_to_server(process, server)
+            server.add_insecure_port(f"[::]:{process.ip.split(':')[-1]}")
+            server.start()
+            process.process_server = server
+
             with grpc.insecure_channel(self.control_panel_ip) as channel:
                 stub = control_panel_pb2_grpc.ControlPanelStub(channel)
-                req = control_panel_pb2.NameIP(name=name, ip=self.ip)
+                req = control_panel_pb2.NameIP(name=name, ip=process.ip)
                 stub.AddProcess(req)
 
+            self.processes[name] = process
+
+
     def create_chain(self):
-        if self.state == NodeState.INITIALIZED:
+        if len(self.processes) == 0 or self.processes[next(iter(self.processes))].state == ProcessState.INACTIVE:
             print("Processes have not been created yet. "
                   "Please create processes with Local-store-ps <number of processes> command")
             return
-        if self.state == NodeState.CHAIN_CREATED:
+        if self.processes[next(iter(self.processes))].state == ProcessState.CHAIN_CREATED:
             print("Chain has already been created. "
                   "Please start a new program to create a new chain")
             return
@@ -125,14 +154,13 @@ class Node(node_pb2_grpc.NodeServicer):
             stub.CreateChain(Empty())
 
     def list_chain(self):
-        if self.state != NodeState.CHAIN_CREATED:
+        if self.processes[next(iter(self.processes))].state != ProcessState.CHAIN_CREATED:
             print("Chain has not been created yet. "
                   "Please create a chain with Create-chain command")
             return
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             chain = stub.ListChain(Empty()).chain
-        print(chain)
 
     def clear(self):
         with grpc.insecure_channel(self.control_panel_ip) as channel:
@@ -169,24 +197,8 @@ class Node(node_pb2_grpc.NodeServicer):
             print("Invalid input")
             return
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].successor_ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
-            stub.Write(node_pb2.WriteRequest(bname, price))
-
-    def Initialize(self, request, context):
-        process = self.processes[request.processID]
-        assert process is not None
-        process.initialize(self.control_panel_ip, request.predecessorIP,
-                           request.successorIP, request.tailIP, request.role)
-        print(f"Process {request.processID} initialized")
-        process.start()
-        self.state = NodeState.CHAIN_CREATED  # even if one processes is initialized, consider the chain created
-        return Empty()
-
-    def Clear(self, request, context):
-        print("Clearing...")
-        self.state = NodeState.INITIALIZED
-        self.processes = {}
-        return Empty()
+            stub = process_pb2_grpc.NodeStub(channel)
+            stub.Write(process_pb2.WriteRequest(bname, price))
 
     def SetPredecessorIP(self, request, context):
         process = self.processes[request.processID]
@@ -204,22 +216,22 @@ class Node(node_pb2_grpc.NodeServicer):
     def GetNumericalDeviation(self, request, context):
         process = self.processes[request.processID]
         assert process is not None
-        return node_pb2.NumericalDeviation(deviation=process.num_write_operations)
+        return process_pb2.NumericalDeviation(deviation=process.num_write_operations)
 
     def Reconcile(self, request, context):
         process = self.processes[request.sourceProcessID]
         assert process is not None
         max_deviation = len(process.last_write_operations)
         with grpc.insecure_channel(request.targetIP) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.NodeStub(channel)
             deviation = stub.GetNumericalDeviation(
-                node_pb2.NumericalDeviationRequest(processID=request.targetProcessID)
+                process_pb2.NumericalDeviationRequest(processID=request.targetProcessID)
             ).deviation
             diff = process.num_write_operations - deviation
             assert 0 <= diff <= max_deviation
             for i in range(max_deviation - diff, max_deviation):
                 key, value = process.last_write_operations[i]
-                stub.RawWrite(node_pb2.RawWriteRequest(processID=request.targetProcessID, key=key, value=value))
+                stub.RawWrite(process_pb2.RawWriteRequest(processID=request.targetProcessID, key=key, value=value))
         return Empty()
 
     def RawWrite(self, request, context):
@@ -266,10 +278,10 @@ if __name__ == '__main__':
     n = Node(name, ip, os.environ["CONTROL_PANEL_IP"])
     n.print_help()
 
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    node_pb2_grpc.add_NodeServicer_to_server(n, server)
-    server.add_insecure_port(f"[::]:{port}")
-    server.start()
+    # server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    # process_pb2_grpc.add_ProcessServicer_to_server(n, server)
+    # server.add_insecure_port(f"[::]:{port}")
+    # server.start()
 
     while True:
         try:
@@ -279,6 +291,9 @@ if __name__ == '__main__':
                 continue
             n.handle_input(inp)
         except KeyboardInterrupt:
-            server.stop(0)
+            for process in n.processes.values():
+                if process.process_server:
+                    process.process_server.stop(0)
             exit()
-    server.stop(0)
+    for process in n.processes.values():
+        process.process_server.stop(0)

@@ -7,7 +7,7 @@ from node import ProcessRole
 import grpc
 from dotenv import load_dotenv
 
-from protos import control_panel_pb2, control_panel_pb2_grpc, node_pb2, node_pb2_grpc
+from protos import control_panel_pb2, control_panel_pb2_grpc, process_pb2, process_pb2_grpc
 from google.protobuf.empty_pb2 import Empty
 
 load_dotenv()
@@ -57,14 +57,16 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(self.processes) - 1 else ProcessRole.NONE
 
             with grpc.insecure_channel(ip) as channel:
-                stub = node_pb2_grpc.NodeStub(channel)
-                stub.Initialize(node_pb2.InitializeRequest(
+                print('Creating process servicers')
+                stub = process_pb2_grpc.ProcessStub(channel)
+                res = stub.Initialize(process_pb2.InitializeRequest(
                     processID=name,
                     predecessorIP=predecessor_ip,
                     successorIP=successor_ip,
                     tailIP=tail_ip,
                     role=role.value,
                 ))
+                print(res)
 
         return control_panel_pb2.CreateChainResponse(chain=self.processes)
 
@@ -77,11 +79,11 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         return control_panel_pb2.ListChainResponse(chain=chain)
 
     def Clear(self, request, context):
-        nodes = set(map(lambda p: p.ip, self.removed_heads + self.processes))
-        for node_ip in nodes:
-            print(f"Clearing node {node_ip}")
-            with grpc.insecure_channel(node_ip) as channel:
-                stub = node_pb2_grpc.NodeStub(channel)
+        processes_ips = set(map(lambda p: p.ip, self.removed_heads + self.processes))
+        for ip in processes_ips:
+            print(f"Clearing process {ip}")
+            with grpc.insecure_channel(ip) as channel:
+                stub = process_pb2_grpc.ProcessStub(channel)
                 stub.Clear(Empty())
         self.state = ControlPanelState.INITIALIZED
         self.processes = []
@@ -108,21 +110,21 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         # Disable the previous head
         previous_head_name, previous_head_ip = self.removed_heads[-1].name, self.removed_heads[-1].ip
         with grpc.insecure_channel(previous_head_ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
-            stub.SetRole(node_pb2.NodeRole(
+            stub = process_pb2_grpc.NodeStub(channel)
+            stub.SetRole(process_pb2.NodeRole(
                 processID=previous_head_name,
                 role=ProcessRole.DISABLED.value
             ))
         new_head_name, new_head_ip = self.processes[0].name, self.processes[0].ip
         with grpc.insecure_channel(new_head_ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.NodeStub(channel)
             # Set the next node as a new head
-            stub.SetRole(node_pb2.NodeRole(
+            stub.SetRole(process_pb2.NodeRole(
                 processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
             # Set the new head predecessor's to None
-            stub.SetPredecessorIP(node_pb2.SetPredecessorIPRequest(processID=new_head_name))
+            stub.SetPredecessorIP(process_pb2.SetPredecessorIPRequest(processID=new_head_name))
         print(f"Head {previous_head_name} ({previous_head_ip}) has been removed")
         return Empty()
 
@@ -144,27 +146,27 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         # Enable the new head
         new_head_name, new_head_ip = self.processes[0].name, self.processes[0].ip
         with grpc.insecure_channel(new_head_ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
-            stub.SetRole(node_pb2.NodeRole(
+            stub = process_pb2_grpc.NodeStub(channel)
+            stub.SetRole(process_pb2.NodeRole(
                 processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
         print("here2")
         old_head_name, old_head_ip = self.processes[1].name, self.processes[1].ip
         with grpc.insecure_channel(old_head_ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.NodeStub(channel)
             # Set the previous head role
-            stub.SetRole(node_pb2.NodeRole(
+            stub.SetRole(process_pb2.NodeRole(
                 processID=old_head_name,
                 role=ProcessRole.NONE.value
             ))
             # change the current node prev to None
-            stub.SetPredecessorIP(node_pb2.SetPredecessorIPRequest(
+            stub.SetPredecessorIP(process_pb2.SetPredecessorIPRequest(
                 processID=old_head_name,
                 ip=new_head_ip
             ))
             # reconciling
-            stub.Reconcile(node_pb2.ReconcileRequest(
+            stub.Reconcile(process_pb2.ReconcileRequest(
                 sourceProcessID=old_head_name,
                 targetProcessID=new_head_name,
                 targetIP=new_head_ip
@@ -185,14 +187,14 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
     @staticmethod
     def compare_numerical_deviation(node1, node2):
         with grpc.insecure_channel(node1.ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.NodeStub(channel)
             node1_deviation = stub.GetNumericalDeviation(
-                node_pb2.NumericalDeviationRequest(processID=node1.name)
+                process_pb2.NumericalDeviationRequest(processID=node1.name)
             ).deviation
         with grpc.insecure_channel(node2.ip) as channel:
-            stub = node_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.NodeStub(channel)
             node2_deviation = stub.GetNumericalDeviation(
-                node_pb2.NumericalDeviationRequest(processID=node2.name)
+                process_pb2.NumericalDeviationRequest(processID=node2.name)
             ).deviation
         return abs(node1_deviation - node2_deviation) > 5
 
@@ -203,6 +205,9 @@ if __name__ == '__main__':
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     control_panel_pb2_grpc.add_ControlPanelServicer_to_server(ControlPanel(), server)
     server.add_insecure_port(f"[::]:{port}")
-    server.start()
-    print(f"Control panel running on port {port}...")
-    server.wait_for_termination()
+    try:
+        server.start()
+        print(f"Control panel running on port {port}...")
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        server.stop(0)

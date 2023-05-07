@@ -2,11 +2,11 @@ syntax = "proto3";
 
 import "google/protobuf/empty.proto";
 
-service Node {
+service Process {
   rpc Initialize(InitializeRequest) returns (google.protobuf.Empty) {}
   rpc Clear(google.protobuf.Empty) returns (google.protobuf.Empty) {}
   rpc SetPredecessorIP(SetPredecessorIPRequest) returns (google.protobuf.Empty) {}
-  rpc SetRole(NodeRole) returns (google.protobuf.Empty) {}
+  rpc SetRole(ProcessRole) returns (google.protobuf.Empty) {}
   rpc GetNumericalDeviation(NumericalDeviationRequest) returns (NumericalDeviation) {}
   rpc Reconcile(ReconcileRequest) returns (google.protobuf.Empty) {}
   rpc RawWrite(RawWriteRequest) returns (google.protobuf.Empty) {}
@@ -26,7 +26,7 @@ message SetPredecessorIPRequest {
   string ip = 2;
 }
 
-message NodeRole {
+message ProcessRole {
   string processID = 1;
   int32 role = 2;
 }

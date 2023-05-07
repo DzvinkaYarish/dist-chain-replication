@@ -19,7 +19,8 @@ message InitializeRequest {
   string predecessorIP = 3;
   string successorIP = 4;
   string tailIP = 5;
-  int32 role = 6;
+  string headIP = 6;
+  int32 role = 7;
 }
 
 message SetPredecessorIPRequest {

@@ -54,6 +54,8 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             predecessor_ip = self.processes[i - 1].ip if i > 0 else None
             successor_ip = self.processes[i + 1].ip if i < len(self.processes) - 1 else None
             tail_ip = self.processes[-1].ip if i != len(self.processes) - 1 else None
+            head_ip = self.processes[0].ip if i != 0 else None
+
             role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(self.processes) - 1 else ProcessRole.NONE
 
             with grpc.insecure_channel(ip) as channel:
@@ -64,6 +66,7 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
                     predecessorIP=predecessor_ip,
                     successorIP=successor_ip,
                     tailIP=tail_ip,
+                    headIP=head_ip,
                     role=role.value,
                 ))
                 print(res)

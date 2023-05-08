@@ -1,6 +1,5 @@
 import os
 import sys
-import threading
 from concurrent import futures
 from enum import Enum
 import time
@@ -56,7 +55,7 @@ class Process(process_pb2_grpc.ProcessServicer):
         self.successor_ip = successor
         self.tail_ip = tail
         self.head_ip = head
-        self.role = role
+        self.role = ProcessRole(role)
     
     def Initialize(self, request, context):
         self.initialize(self.control_panel_ip, request.predecessorIP,
@@ -75,7 +74,7 @@ class Process(process_pb2_grpc.ProcessServicer):
     def Write(self, request, context):
         print(f"Write is in role {self.role} in {self.name}")
         time.sleep(request.timeout)
-        if self.role == 3:
+        if self.role == ProcessRole.TAIL:
             self.db[request.key] = (request.value, 'clean')
         else:
             with grpc.insecure_channel(self.successor_ip) as channel:
@@ -118,8 +117,37 @@ class Process(process_pb2_grpc.ProcessServicer):
         for key, value in self.db.items():
             status[key] = value[1]
         return process_pb2.StatusResponse(status=status)
-    
 
+    def SetPredecessorIP(self, request, context):
+        self.predecessor_ip = request.ip
+        return Empty()
+
+    def SetRole(self, request, context):
+        new_role = ProcessRole(request.role)
+        self.role = new_role
+        return Empty()
+
+    def GetNumericalDeviation(self, request, context):
+        return process_pb2.NumericalDeviation(deviation=self.num_write_operations)
+
+    def Reconcile(self, request, context):
+        max_deviation = len(self.last_write_operations)
+        with grpc.insecure_channel(request.targetIP) as channel:
+            stub = process_pb2_grpc.ProcessStub(channel)
+            deviation = stub.GetNumericalDeviation(
+                process_pb2.NumericalDeviationRequest(processID=request.targetProcessID)
+            ).deviation
+            diff = self.num_write_operations - deviation
+            assert 0 <= diff <= max_deviation
+            for i in range(max_deviation - diff, max_deviation):
+                key, value = self.last_write_operations[i]
+                stub.RawWrite(process_pb2.RawWriteRequest(processID=request.targetProcessID, key=key, value=value))
+        return Empty()
+
+    def RawWrite(self, request, context):
+        self.db[request.key] = request.value
+        return Empty()
+    
     def run(self):
         if self.control_panel_ip is None:
             print(f"Control Panel is None for {self.name}. Stopping...")
@@ -147,7 +175,6 @@ class Node():
         self.name = name
         self.ip = ip
         self.control_panel_ip = control_panel_ip
-        # self.state = ProcessState.INITIALIZED
         self.processes = {}
         self.cmds = {
             'Local-store-ps': self.local_store_ps,
@@ -161,6 +188,10 @@ class Node():
             'List-books': self.list_books,
             'Data-status': self.data_status
         }
+        # self.cmds = {'l': self.local_store_ps,
+        #              'w': self.write_operation,
+        #              'r': self.read_operation,
+        #              'c': self.create_chain,}
 
     def local_store_ps(self, n):
         n = int(n)
@@ -209,6 +240,7 @@ class Node():
         with grpc.insecure_channel(self.control_panel_ip) as channel:
             stub = control_panel_pb2_grpc.ControlPanelStub(channel)
             chain = stub.ListChain(Empty()).chain
+            print(chain)
 
     def clear(self):
         with grpc.insecure_channel(self.control_panel_ip) as channel:
@@ -241,17 +273,20 @@ class Node():
         try:
             price = float(price)
             timeout = int(timeout)
-        except:
+        except Exception as e:
+            print(e)
             print("Invalid input")
             return
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].head_ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
+
             stub.Write(process_pb2.WriteRequest(key=bname, value=price, timeout=timeout))
 
     def read_operation(self, bname):
         # NO SPACES IN INPUT
         bname = bname.strip('" ')
-        with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
+        ip = self.processes[next(iter(self.processes))].ip
+        with grpc.insecure_channel(ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
             response = stub.Read(process_pb2.ReadRequest(key=bname))
             if response.success:
@@ -276,46 +311,6 @@ class Node():
                 stub = process_pb2_grpc.ProcessStub(channel)
                 response = stub.DataStatus(Empty())
                 print(response.status)
-
-    def SetPredecessorIP(self, request, context):
-        process = self.processes[request.processID]
-        assert process is not None
-        process.predecessor_ip = request.ip
-        return Empty()
-
-    def SetRole(self, request, context):
-        process = self.processes[request.processID]
-        assert process is not None
-        new_role = ProcessRole(request.role)
-        process.role = new_role
-        return Empty()
-
-    def GetNumericalDeviation(self, request, context):
-        process = self.processes[request.processID]
-        assert process is not None
-        return process_pb2.NumericalDeviation(deviation=process.num_write_operations)
-
-    def Reconcile(self, request, context):
-        process = self.processes[request.sourceProcessID]
-        assert process is not None
-        max_deviation = len(process.last_write_operations)
-        with grpc.insecure_channel(request.targetIP) as channel:
-            stub = process_pb2_grpc.ProcessStub(channel)
-            deviation = stub.GetNumericalDeviation(
-                process_pb2.NumericalDeviationRequest(processID=request.targetProcessID)
-            ).deviation
-            diff = process.num_write_operations - deviation
-            assert 0 <= diff <= max_deviation
-            for i in range(max_deviation - diff, max_deviation):
-                key, value = process.last_write_operations[i]
-                stub.RawWrite(process_pb2.RawWriteRequest(processID=request.targetProcessID, key=key, value=value))
-        return Empty()
-
-    def RawWrite(self, request, context):
-        process = self.processes[request.processID]
-        assert process is not None
-        process.db[request.key] = request.value
-        return Empty()
 
     def handle_input(self, inp):
         inp = inp.strip().split(' ')
@@ -350,11 +345,6 @@ if __name__ == '__main__':
     print(f"Starting node {name} with ip {ip}")
     n = Node(name, ip, os.environ["CONTROL_PANEL_IP"])
     n.print_help()
-
-    # server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    # process_pb2_grpc.add_ProcessServicer_to_server(n, server)
-    # server.add_insecure_port(f"[::]:{port}")
-    # server.start()
 
     while True:
         try:

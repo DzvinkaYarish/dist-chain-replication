@@ -59,7 +59,6 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             role = ProcessRole.HEAD if i == 0 else ProcessRole.TAIL if i == len(self.processes) - 1 else ProcessRole.NONE
 
             with grpc.insecure_channel(ip) as channel:
-                print('Creating process servicers')
                 stub = process_pb2_grpc.ProcessStub(channel)
                 res = stub.Initialize(process_pb2.InitializeRequest(
                     processID=name,
@@ -69,7 +68,6 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
                     headIP=head_ip,
                     role=role.value,
                 ))
-                print(res)
 
         return control_panel_pb2.CreateChainResponse(chain=self.processes)
 
@@ -113,16 +111,16 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         # Disable the previous head
         previous_head_name, previous_head_ip = self.removed_heads[-1].name, self.removed_heads[-1].ip
         with grpc.insecure_channel(previous_head_ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
-            stub.SetRole(process_pb2.NodeRole(
+            stub = process_pb2_grpc.ProcessStub(channel)
+            stub.SetRole(process_pb2.ProcessRole(
                 processID=previous_head_name,
                 role=ProcessRole.DISABLED.value
             ))
         new_head_name, new_head_ip = self.processes[0].name, self.processes[0].ip
         with grpc.insecure_channel(new_head_ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.ProcessStub(channel)
             # Set the next node as a new head
-            stub.SetRole(process_pb2.NodeRole(
+            stub.SetRole(process_pb2.ProcessRole(
                 processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
@@ -149,17 +147,17 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
         # Enable the new head
         new_head_name, new_head_ip = self.processes[0].name, self.processes[0].ip
         with grpc.insecure_channel(new_head_ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
-            stub.SetRole(process_pb2.NodeRole(
+            stub = process_pb2_grpc.ProcessStub(channel)
+            stub.SetRole(process_pb2.ProcessRole(
                 processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
         print("here2")
         old_head_name, old_head_ip = self.processes[1].name, self.processes[1].ip
         with grpc.insecure_channel(old_head_ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.ProcessStub(channel)
             # Set the previous head role
-            stub.SetRole(process_pb2.NodeRole(
+            stub.SetRole(process_pb2.ProcessRole(
                 processID=old_head_name,
                 role=ProcessRole.NONE.value
             ))
@@ -190,12 +188,12 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
     @staticmethod
     def compare_numerical_deviation(node1, node2):
         with grpc.insecure_channel(node1.ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.ProcessStub(channel)
             node1_deviation = stub.GetNumericalDeviation(
                 process_pb2.NumericalDeviationRequest(processID=node1.name)
             ).deviation
         with grpc.insecure_channel(node2.ip) as channel:
-            stub = process_pb2_grpc.NodeStub(channel)
+            stub = process_pb2_grpc.ProcessStub(channel)
             node2_deviation = stub.GetNumericalDeviation(
                 process_pb2.NumericalDeviationRequest(processID=node2.name)
             ).deviation

@@ -6,6 +6,7 @@ service Process {
   rpc Initialize(InitializeRequest) returns (google.protobuf.Empty) {}
   rpc Clear(google.protobuf.Empty) returns (google.protobuf.Empty) {}
   rpc SetPredecessorIP(SetPredecessorIPRequest) returns (google.protobuf.Empty) {}
+  rpc SetHeadIP(SetHeadIPRequest) returns (google.protobuf.Empty) {}
   rpc SetRole(ProcessRole) returns (google.protobuf.Empty) {}
   rpc GetNumericalDeviation(NumericalDeviationRequest) returns (NumericalDeviation) {}
   rpc Reconcile(ReconcileRequest) returns (google.protobuf.Empty) {}
@@ -26,6 +27,11 @@ message InitializeRequest {
 }
 
 message SetPredecessorIPRequest {
+  string processID = 1;
+  string ip = 2;
+}
+
+message SetHeadIPRequest {
   string processID = 1;
   string ip = 2;
 }
@@ -53,7 +59,7 @@ message ReconcileRequest {
 message RawWriteRequest {
   string processID = 1;
   string key = 2;
-  string value = 3;
+  float value = 3;
 }
 
 message WriteRequest {

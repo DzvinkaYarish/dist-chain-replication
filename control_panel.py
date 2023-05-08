@@ -116,6 +116,7 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
                 processID=previous_head_name,
                 role=ProcessRole.DISABLED.value
             ))
+
         new_head_name, new_head_ip = self.processes[0].name, self.processes[0].ip
         with grpc.insecure_channel(new_head_ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
@@ -126,6 +127,12 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
             ))
             # Set the new head predecessor's to None
             stub.SetPredecessorIP(process_pb2.SetPredecessorIPRequest(processID=new_head_name))
+
+        processes_ips = set(map(lambda p: p.ip, self.processes))
+        for ip in processes_ips:
+            with grpc.insecure_channel(ip) as channel:
+                stub = process_pb2_grpc.ProcessStub(channel)
+                stub.SetHeadIP(process_pb2.SetHeadIPRequest(processID=new_head_name, ip=new_head_ip))
         print(f"Head {previous_head_name} ({previous_head_ip}) has been removed")
         return Empty()
 
@@ -152,7 +159,6 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
                 processID=new_head_name,
                 role=ProcessRole.HEAD.value
             ))
-        print("here2")
         old_head_name, old_head_ip = self.processes[1].name, self.processes[1].ip
         with grpc.insecure_channel(old_head_ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
@@ -172,6 +178,12 @@ class ControlPanel(control_panel_pb2_grpc.ControlPanelServicer):
                 targetProcessID=new_head_name,
                 targetIP=new_head_ip
             ))
+        processes_ips = set(map(lambda p: p.ip, self.processes))
+        for ip in processes_ips:
+            with grpc.insecure_channel(ip) as channel:
+                stub = process_pb2_grpc.ProcessStub(channel)
+                stub.SetHeadIP(process_pb2.SetHeadIPRequest(processID=old_head_name, ip=old_head_ip))
+
         print(f"Process {self.processes[0].name} ({self.processes[0].ip}) has been restored as the head. "
               f"Reconciled successfully.")
         return Empty()

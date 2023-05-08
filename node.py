@@ -3,12 +3,14 @@ import sys
 from concurrent import futures
 from enum import Enum
 import time
+from collections import deque
 
 import grpc
 from dotenv import load_dotenv
 
 from protos import control_panel_pb2, control_panel_pb2_grpc, process_pb2, process_pb2_grpc
 from google.protobuf.empty_pb2 import Empty
+
 
 load_dotenv()
 
@@ -34,7 +36,7 @@ class Process(process_pb2_grpc.ProcessServicer):
         self.db = {}
         # Stores a list of last 5 write operations (key, value) performed on the db.
         # Used to reconcile a restored head
-        self.last_write_operations = []
+        self.last_write_operations = deque([], maxlen=5)
         # Number of write operations performed on the db.
         # Used as numerical deviation during head restoration
         self.num_write_operations = 0
@@ -67,6 +69,9 @@ class Process(process_pb2_grpc.ProcessServicer):
     def Clear(self, request, context):
         print("Clearing...")
         self.state = ProcessState.INACTIVE
+        self.db = {}
+        self.last_write_operations = deque([], maxlen=5)
+        self.num_write_operations = 0
         self.process_server.stop(0)
 
         return Empty()
@@ -74,9 +79,12 @@ class Process(process_pb2_grpc.ProcessServicer):
     def Write(self, request, context):
         print(f"Write is in role {self.role} in {self.name}")
         time.sleep(request.timeout)
+        self.num_write_operations += 1
+        self.last_write_operations.append((request.key, request.value))
         if self.role == ProcessRole.TAIL:
             self.db[request.key] = (request.value, 'clean')
         else:
+
             with grpc.insecure_channel(self.successor_ip) as channel:
                 stub = process_pb2_grpc.ProcessStub(channel)
                 self.db[request.key] = (request.value, 'dirty')
@@ -120,6 +128,10 @@ class Process(process_pb2_grpc.ProcessServicer):
 
     def SetPredecessorIP(self, request, context):
         self.predecessor_ip = request.ip
+        return Empty()
+
+    def SetHeadIP(self, request, context):
+        self.head_ip = request.ip
         return Empty()
 
     def SetRole(self, request, context):
@@ -176,22 +188,25 @@ class Node():
         self.ip = ip
         self.control_panel_ip = control_panel_ip
         self.processes = {}
-        self.cmds = {
-            'Local-store-ps': self.local_store_ps,
-            'Create-chain': self.create_chain,
-            'List-chain': self.list_chain,
-            'Clear': self.clear,
-            'Remove-head': self.remove_head,
-            'Restore-head': self.restore_head,
-            'Write-operation': self.write_operation,
-            'Read-operation': self.read_operation,
-            'List-books': self.list_books,
-            'Data-status': self.data_status
-        }
-        # self.cmds = {'l': self.local_store_ps,
-        #              'w': self.write_operation,
-        #              'r': self.read_operation,
-        #              'c': self.create_chain,}
+        # self.cmds = {
+        #     'Local-store-ps': self.local_store_ps,
+        #     'Create-chain': self.create_chain,
+        #     'List-chain': self.list_chain,
+        #     'Clear': self.clear,
+        #     'Remove-head': self.remove_head,
+        #     'Restore-head': self.restore_head,
+        #     'Write-operation': self.write_operation,
+        #     'Read-operation': self.read_operation,
+        #     'List-books': self.list_books,
+        #     'Data-status': self.data_status
+        # }
+        self.cmds = {'l': self.local_store_ps,
+                     'w': self.write_operation,
+                     'r': self.read_operation,
+                     'c': self.create_chain,
+                    'rmh' : self.remove_head,
+                     'rsh' : self.restore_head,
+                     }
 
     def local_store_ps(self, n):
         n = int(n)
@@ -258,6 +273,10 @@ class Node():
             stub.RestoreHead(Empty())
 
     def write_operation(self, bp_pair, timeout):
+        if self.processes[next(iter(self.processes))].state != ProcessState.CHAIN_CREATED:
+            print("Chain has not been created yet. "
+                  "Please create a chain with Create-chain command")
+            return
         # NO SPACES IN INPUT
         cleaned_bp_pair = bp_pair.strip()
         if cleaned_bp_pair[0] != '<' and cleaned_bp_pair[-1] != '>':
@@ -279,10 +298,13 @@ class Node():
             return
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].head_ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
-
             stub.Write(process_pb2.WriteRequest(key=bname, value=price, timeout=timeout))
 
     def read_operation(self, bname):
+        if self.processes[next(iter(self.processes))].state != ProcessState.CHAIN_CREATED:
+            print("Chain has not been created yet. "
+                  "Please create a chain with Create-chain command")
+            return
         # NO SPACES IN INPUT
         bname = bname.strip('" ')
         ip = self.processes[next(iter(self.processes))].ip
@@ -290,15 +312,16 @@ class Node():
             stub = process_pb2_grpc.ProcessStub(channel)
             response = stub.Read(process_pb2.ReadRequest(key=bname))
             if response.success:
-                print(f"Book name: {bname}, price: {response.value}")
+                print(f"Book name: {bname}, price: {round(response.value, 2)} EUR")
             else:
-                print("Book not found")
+                print("Not yet in the stock")
 
     def list_books(self):
         with grpc.insecure_channel(self.processes[next(iter(self.processes))].ip) as channel:
             stub = process_pb2_grpc.ProcessStub(channel)
             response = stub.ListBooks(Empty())
-            print(response.books)
+            for b,p in response.books.items():
+                print(f"Book name: {b}, price: {round(p, 2)} EUR")
 
     def data_status(self, pname):
         # NO SPACES IN INPUT
@@ -333,7 +356,7 @@ Commands:
     Restore-head
     Write-operation <book name, price> <timeout>
     Read-operation <book name>
-    Data-status
+    Data-status <process name>
     List-books
     ''')
 

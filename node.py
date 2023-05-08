@@ -188,25 +188,25 @@ class Node():
         self.ip = ip
         self.control_panel_ip = control_panel_ip
         self.processes = {}
-        # self.cmds = {
-        #     'Local-store-ps': self.local_store_ps,
-        #     'Create-chain': self.create_chain,
-        #     'List-chain': self.list_chain,
-        #     'Clear': self.clear,
-        #     'Remove-head': self.remove_head,
-        #     'Restore-head': self.restore_head,
-        #     'Write-operation': self.write_operation,
-        #     'Read-operation': self.read_operation,
-        #     'List-books': self.list_books,
-        #     'Data-status': self.data_status
-        # }
-        self.cmds = {'l': self.local_store_ps,
-                     'w': self.write_operation,
-                     'r': self.read_operation,
-                     'c': self.create_chain,
-                    'rmh' : self.remove_head,
-                     'rsh' : self.restore_head,
-                     }
+        self.cmds = {
+            'Local-store-ps': self.local_store_ps,
+            'Create-chain': self.create_chain,
+            'List-chain': self.list_chain,
+            'Clear': self.clear,
+            'Remove-head': self.remove_head,
+            'Restore-head': self.restore_head,
+            'Write-operation': self.write_operation,
+            'Read-operation': self.read_operation,
+            'List-books': self.list_books,
+            'Data-status': self.data_status
+        }
+        # self.cmds = {'l': self.local_store_ps,
+        #              'w': self.write_operation,
+        #              'r': self.read_operation,
+        #              'c': self.create_chain,
+        #             'rmh' : self.remove_head,
+        #              'rsh' : self.restore_head,
+        #              }
 
     def local_store_ps(self, n):
         n = int(n)
